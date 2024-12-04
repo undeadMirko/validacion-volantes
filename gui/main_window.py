@@ -9,6 +9,7 @@ import json
 from bs4 import BeautifulSoup
 from openpyxl import Workbook 
 from openpyxl.styles import *
+from datetime import datetime
 import config
 
 class MainWindow(QMainWindow):
@@ -134,10 +135,13 @@ class MainWindow(QMainWindow):
                                         secuencia = cols[0].get_text(strip=True)
                                         valor_efectivo = cols[1].get_text(strip=True)
                                         valor_cheque = cols[2].get_text(strip=True)
+                                        usuario = cols[3].get_text(strip=True) if len(cols) > 3 else "Desconocido"
                                         rows.append({
                                             "Secuencia": secuencia,
                                             "Valor Efectivo": valor_efectivo,
                                             "Valor Cheque": valor_cheque,
+                                            "Usuario": usuario,
+
                                         })
                                 self.resultados.append({
                                     "Codigo": codigo,
@@ -231,11 +235,14 @@ class MainWindow(QMainWindow):
         }
 
 
+
+        # Crear el libro de trabajo
         wb = Workbook()
         ws = wb.active
         ws.title = "Resultados Volantes"
 
-        headers = ["Código Maestro", "Distribuidor", "Fecha de Consulta", "Tipo de Volante", "Mensaje", "Datos Volantes"]
+        # Definir cabeceras, asegurando que "Usuario" y "Mensaje" estén correctamente configurados
+        headers = ["Código Maestro", "Distribuidor", "Fecha de Consulta", "Tipo de Volante", "Secuencia", "Valor Efectivo", "Valor Cheque", "Usuario", "Mensaje"]
         ws.append(headers)
 
         # Aplicar estilos a las cabeceras
@@ -253,47 +260,74 @@ class MainWindow(QMainWindow):
         thin_border = Border(left=Side(style="thin"), right=Side(style="thin"), top=Side(style="thin"), bottom=Side(style="thin"))
 
         # Insertar los datos con formato
-        for i, resultado in enumerate(self.resultados, start=2):
+        row_index = 2  # Comienza después de las cabeceras
+        for resultado in self.resultados:
             distribuidor = resultado["Distribuidor"]
             codigo_maestro = resultado["Codigo"]
             distribuidor_mapeado = distribuidor_a_codigo.get(distribuidor, "No asignado")
             tipo_volante = "Voz" if resultado["Volantetype"] == "V" else "Reposición"
-            
-            # Concatenar los volantes si existen
-            datos_volantes = ""
+            fecha = resultado["Fecha"]
+
             if "Datos" in resultado:
                 for volante in resultado["Datos"]:
-                    volante_info = f"Secuencia: {volante['Secuencia']}, Efectivo: {volante['Valor Efectivo']}, Cheque: {volante['Valor Cheque']}"
-                    datos_volantes += f"{volante_info}; "
-
-            fila = [codigo_maestro, distribuidor_mapeado, resultado["Fecha"], tipo_volante, resultado.get("Mensaje", ""), datos_volantes]
-            for col_num, cell_value in enumerate(fila, start=1):
-                cell = ws.cell(row=i, column=col_num, value=cell_value)
-                cell.border = thin_border
-                if col_num == 6:  # Datos Volantes, que puede tener mucho texto
-                    cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+                    # Aseguramos que todos los datos estén en el orden correcto
+                    fila = [
+                        codigo_maestro,
+                        distribuidor_mapeado,
+                        fecha,
+                        tipo_volante,
+                        volante["Secuencia"],
+                        volante["Valor Efectivo"],
+                        volante["Valor Cheque"],
+                        volante.get("Usuario", ""),  # Asigna el valor de Usuario si está presente
+                        ""  # Mensaje queda vacío si hay datos
+                    ]
+                    for col_num, cell_value in enumerate(fila, start=1):
+                        cell = ws.cell(row=row_index, column=col_num)
+                        cell.value = cell_value
+                        cell.border = thin_border
+                    row_index += 1  # Incrementar el índice después de escribir una fila
+            else:
+                # Si no hay "Datos", aseguramos que "Mensaje" tenga un valor y "Usuario" quede vacío
+                mensaje = resultado.get("Mensaje", "Sin datos disponibles")
+                fila = [
+                    codigo_maestro,
+                    distribuidor_mapeado,
+                    fecha,
+                    tipo_volante,
+                    "",  # Secuencia queda vacío
+                    "",  # Valor Efectivo queda vacío
+                    "",  # Valor Cheque queda vacío
+                    "",  # Usuario queda vacío
+                    mensaje  # Asigna el valor del mensaje
+                ]
+                for col_num, cell_value in enumerate(fila, start=1):
+                    cell = ws.cell(row=row_index, column=col_num)
+                    cell.value = cell_value
+                    cell.border = thin_border
+                row_index += 1  # Incrementar el índice también aquí
 
         # Ajustar tamaño de las columnas
         for col in ws.columns:
             max_length = 0
-            column = col[0].column_letter  # Get the column name
+            column = col[0].column_letter  # Obtener el nombre de la columna
+
             for cell in col:
                 try:
-                    if len(str(cell.value)) > max_length:
+                    if cell.value and len(str(cell.value)) > max_length:
                         max_length = len(cell.value)
                 except:
                     pass
-            adjusted_width = (max_length + 2)  # Add a little extra padding
+            adjusted_width = (max_length + 2)  # Agregar un margen
             ws.column_dimensions[column].width = adjusted_width
 
-        # Guardar el archivo Excel con formato
-        try:
-            # Obtener la fecha actual
-            fecha_actual = QDate.currentDate().toString("yyyy-MM-dd")
-            archivo_excel = f"Consulta-Volantes-{fecha_actual}.xlsx"
+        # Guardar el archivo de Excel una vez que todos los datos se han procesado
+        filename = f"resultado_consulta_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        wb.save(filename)
+        self.log_progreso(f"Resultados exportados a {filename}.")
+        self.mostrar_alerta("Exportación a Excel", f"Los resultados se han exportado correctamente a {filename}.")
 
-            wb.save(archivo_excel)
-            self.log_progreso(f"Resultados exportados a Excel en {archivo_excel}")
-        except Exception as e:
-            self.log_progreso(f"Error al exportar a Excel: {e}")
+
+
+
 
