@@ -110,6 +110,19 @@ class MainWindow(QMainWindow):
 
         url = "https://poliedrodist.comcel.com.co/Recaudo.PS/VolantesNIT/ResumenVolantes"
 
+        # Verificar si el código existe en la lista del select con id 'Distr'
+        response_distr = requests.get(url, headers=headers)
+        soup_distr = BeautifulSoup(response_distr.text, 'html.parser')
+        select_distr = soup_distr.find('select', {'id': 'Distr'})
+        options_distr = select_distr.find_all('option')
+        codigos_distr = [option['value'] for option in options_distr]
+
+        for codigo in config.codigos_pendientes.keys():
+            if f"-{codigo}" in codigos_distr:
+                self.log_progreso(f"Código {codigo} ok")
+            else:
+                self.log_progreso(f"Código {codigo} cambio")
+
         for codigo, items in config.codigos_pendientes.items():
             for item in items:
                 for volantetype in ['R', 'V']:
@@ -182,13 +195,16 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, titulo, mensaje)
 
     def limpiar_informacion(self):
-        """Limpia los campos de la interfaz pero conserva la cookie."""
+        """Limpia los campos de la interfaz y la variable de resultados, pero conserva la cookie."""
         self.log_progreso("Limpiando campos...")
-        
+
         # Limpiar los campos visibles pero conservar la cookie
         self.fecha_input.clear()  # Limpia el campo de fecha
         self.progreso_text.clear()  # Limpia el área de progreso
-        
+
+        # Limpiar la variable de resultados
+        self.resultados = []
+
         # La cookie se conserva porque está almacenada en self.cookie
         # No es necesario modificarla, solo limpiar la interfaz
         self.log_progreso(f"Cookie conservada: {self.cookie}")
